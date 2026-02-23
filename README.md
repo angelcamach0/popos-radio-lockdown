@@ -18,6 +18,8 @@ On this COSMIC/Pop!_OS setup, `Lock` is visible but `Unlock` is not always emitt
 - `docs/gdm_network_lockdown_revert_audit.md`
 - `docs/architecture.md`
 - `docs/online_research.md`
+- `docs/CONTRIBUTING_DEV_SETUP.md`
+- `docs/upstream_issue_draft.md`
 
 ## Usage
 ```bash
