@@ -57,6 +57,7 @@ PAM_HOOK_LINE_AUTH="auth optional pam_exec.so quiet /usr/local/sbin/prelogin-pam
 PAM_TARGET_CANDIDATES="/etc/pam.d/cosmic-greeter /etc/pam.d/gdm-password /etc/pam.d/gdm-fingerprint /etc/pam.d/gdm-smartcard-sssd-or-password /etc/pam.d/gdm-smartcard-pkcs11-exclusive /etc/pam.d/gdm-smartcard-sssd-exclusive"
 POLICY_STATE_DIR="${HOME}/.local/state/prelogin-radio-lockdown"
 WIFI_POLICY_BACKUP_FILE="${POLICY_STATE_DIR}/wifi_policy_backup.env"
+MANAGE_WIFI_POLICY="${PRELOGIN_MANAGE_WIFI_POLICY:-0}"
 
 pam_backup_path() {
   local pam_file="$1"
@@ -680,7 +681,9 @@ remove_pam_hook() {
 }
 
 lock_rule() {
-  apply_wifi_policy_for_greeter
+  if [[ "$MANAGE_WIFI_POLICY" == "1" ]]; then
+    apply_wifi_policy_for_greeter
+  fi
   write_polkit_rule
   write_guard_script
   write_watch_script
@@ -711,7 +714,9 @@ unlock_rule() {
 
   sudo rm -f "$RULE_FILE" "$GUARD_SCRIPT" "$GUARD_UNIT" "$WATCH_SCRIPT" "$WATCH_UNIT" "$LOCK_STATE_FILE"
   remove_pam_hook
-  restore_wifi_policy_backup
+  if [[ "$MANAGE_WIFI_POLICY" == "1" ]]; then
+    restore_wifi_policy_backup
+  fi
   systemctl --user disable --now prelogin-login-radio-restore.service >/dev/null 2>&1 || true
   systemctl --user disable --now prelogin-unlock-radio-watch.service >/dev/null 2>&1 || true
   systemctl --user daemon-reload >/dev/null 2>&1 || true
@@ -780,7 +785,11 @@ status_rule() {
   [[ -f "$USER_UNLOCK_WATCH_HOOK" ]] && echo "  - $USER_UNLOCK_WATCH_HOOK" || echo "  - MISSING (user unlock hook): $USER_UNLOCK_WATCH_HOOK"
   [[ -f "$USER_UNLOCK_WATCH_UNIT" ]] && echo "  - $USER_UNLOCK_WATCH_UNIT" || echo "  - MISSING (user unlock hook): $USER_UNLOCK_WATCH_UNIT"
   file_present "$PAM_UNLOCK_RESTORE_HOOK" && echo "  - $PAM_UNLOCK_RESTORE_HOOK" || echo "  - MISSING (pam hook): $PAM_UNLOCK_RESTORE_HOOK"
-  [[ -f "$WIFI_POLICY_BACKUP_FILE" ]] && echo "  - $WIFI_POLICY_BACKUP_FILE (wifi policy backup)" || echo "  - MISSING (wifi policy backup): $WIFI_POLICY_BACKUP_FILE"
+  if [[ "$MANAGE_WIFI_POLICY" == "1" ]]; then
+    [[ -f "$WIFI_POLICY_BACKUP_FILE" ]] && echo "  - $WIFI_POLICY_BACKUP_FILE (wifi policy backup)" || echo "  - MISSING (wifi policy backup): $WIFI_POLICY_BACKUP_FILE"
+  else
+    echo "  - Wi-Fi policy management: disabled (set PRELOGIN_MANAGE_WIFI_POLICY=1 to enable backup/restore)"
+  fi
   while IFS= read -r pam_file; do
     backup="$(pam_backup_path "$pam_file")"
     file_present "$backup" && echo "  - $backup (backup for full revert)" || true

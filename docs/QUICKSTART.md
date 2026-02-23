@@ -16,11 +16,17 @@ chmod +x scripts/gdm_network_lockdown.sh
 ./scripts/gdm_network_lockdown.sh status
 ```
 
+Optional Wi-Fi policy mode (backup/apply/restore active profile permissions + autoconnect):
+```bash
+PRELOGIN_MANAGE_WIFI_POLICY=1 ./scripts/gdm_network_lockdown.sh lock
+```
+
 ## Expected behavior
 - Lock screen or logout/greeter: radios forced OFF.
 - Unlock/login: radios restored ON once; user can toggle normally.
 - Reboot: policy persists while locked.
-- Active Wi-Fi profile policy is backed up and normalized for greeter connectivity while feature is enabled; `revert` restores original profile policy.
+- By default, Wi-Fi profile policy is untouched.
+- Optional: with `PRELOGIN_MANAGE_WIFI_POLICY=1`, active profile policy is backed up, set for greeter-friendly autoconnect, and restored on revert.
 
 ## Smoke test (recommended)
 1. Lock/unlock once.
@@ -37,6 +43,11 @@ rfkill list | sed -n '1,40p'
 ```bash
 ./scripts/gdm_network_lockdown.sh revert
 ./scripts/gdm_network_lockdown.sh status
+```
+
+If you enabled Wi-Fi policy mode:
+```bash
+PRELOGIN_MANAGE_WIFI_POLICY=1 ./scripts/gdm_network_lockdown.sh revert
 ```
 
 After `revert`, reboot and confirm radios behave normally with no forced policy.

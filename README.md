@@ -43,5 +43,9 @@ then rerun the smoke test from `docs/QUICKSTART.md`.
 
 ## Safety
 - `lock` installs files/services and PAM hook backups.
-- `lock` also snapshots the active Wi-Fi profile policy (`autoconnect` + `permissions`) and applies greeter-friendly policy.
-- `revert` removes installed artifacts, restores PAM files, and restores the saved Wi-Fi profile policy.
+- `revert` removes installed artifacts and restores PAM files.
+- Optional Wi-Fi policy backup/restore is available only when enabled with:
+```bash
+PRELOGIN_MANAGE_WIFI_POLICY=1 ./scripts/gdm_network_lockdown.sh lock
+PRELOGIN_MANAGE_WIFI_POLICY=1 ./scripts/gdm_network_lockdown.sh revert
+```
