@@ -55,6 +55,8 @@ PAM_UNLOCK_RESTORE_HOOK="/usr/local/sbin/prelogin-pam-unlock-restore.sh"
 PAM_HOOK_LINE_SESSION="session optional pam_exec.so quiet /usr/local/sbin/prelogin-pam-unlock-restore.sh"
 PAM_HOOK_LINE_AUTH="auth optional pam_exec.so quiet /usr/local/sbin/prelogin-pam-unlock-restore.sh"
 PAM_TARGET_CANDIDATES="/etc/pam.d/cosmic-greeter /etc/pam.d/gdm-password /etc/pam.d/gdm-fingerprint /etc/pam.d/gdm-smartcard-sssd-or-password /etc/pam.d/gdm-smartcard-pkcs11-exclusive /etc/pam.d/gdm-smartcard-sssd-exclusive"
+POLICY_STATE_DIR="${HOME}/.local/state/prelogin-radio-lockdown"
+WIFI_POLICY_BACKUP_FILE="${POLICY_STATE_DIR}/wifi_policy_backup.env"
 
 pam_backup_path() {
   local pam_file="$1"
@@ -66,6 +68,60 @@ list_existing_pam_targets() {
   for p in $PAM_TARGET_CANDIDATES; do
     [[ -f "$p" ]] && printf '%s\n' "$p"
   done
+}
+
+active_wifi_profile_name() {
+  nmcli -t -f NAME,TYPE connection show --active 2>/dev/null | awk -F: '$2=="802-11-wireless"{print $1; exit}'
+}
+
+backup_wifi_policy_once() {
+  local profile ac perm
+  mkdir -p "$POLICY_STATE_DIR"
+  [[ -f "$WIFI_POLICY_BACKUP_FILE" ]] && return 0
+
+  profile="$(active_wifi_profile_name || true)"
+  [[ -n "$profile" ]] || return 0
+
+  ac="$(nmcli -g connection.autoconnect connection show "$profile" 2>/dev/null || true)"
+  perm="$(nmcli -g connection.permissions connection show "$profile" 2>/dev/null || true)"
+
+  {
+    printf 'PROFILE_NAME=%s\n' "$profile"
+    printf 'PROFILE_AUTOCONNECT=%s\n' "$ac"
+    printf 'PROFILE_PERMISSIONS=%s\n' "$perm"
+  } > "$WIFI_POLICY_BACKUP_FILE"
+  chmod 600 "$WIFI_POLICY_BACKUP_FILE" 2>/dev/null || true
+}
+
+apply_wifi_policy_for_greeter() {
+  local profile
+  backup_wifi_policy_once
+
+  if [[ -f "$WIFI_POLICY_BACKUP_FILE" ]]; then
+    profile="$(sed -n 's/^PROFILE_NAME=//p' "$WIFI_POLICY_BACKUP_FILE" | head -n1)"
+  else
+    profile="$(active_wifi_profile_name || true)"
+  fi
+  [[ -n "$profile" ]] || return 0
+
+  nmcli connection modify "$profile" connection.permissions "" connection.autoconnect yes >/dev/null 2>&1 || \
+    sudo nmcli connection modify "$profile" connection.permissions "" connection.autoconnect yes >/dev/null 2>&1 || true
+}
+
+restore_wifi_policy_backup() {
+  local profile ac perm
+  [[ -f "$WIFI_POLICY_BACKUP_FILE" ]] || return 0
+
+  profile="$(sed -n 's/^PROFILE_NAME=//p' "$WIFI_POLICY_BACKUP_FILE" | head -n1)"
+  ac="$(sed -n 's/^PROFILE_AUTOCONNECT=//p' "$WIFI_POLICY_BACKUP_FILE" | head -n1)"
+  perm="$(sed -n 's/^PROFILE_PERMISSIONS=//p' "$WIFI_POLICY_BACKUP_FILE" | head -n1)"
+
+  if [[ -n "$profile" ]] && nmcli connection show "$profile" >/dev/null 2>&1; then
+    nmcli connection modify "$profile" connection.permissions "$perm" connection.autoconnect "$ac" >/dev/null 2>&1 || \
+      sudo nmcli connection modify "$profile" connection.permissions "$perm" connection.autoconnect "$ac" >/dev/null 2>&1 || true
+  fi
+
+  rm -f "$WIFI_POLICY_BACKUP_FILE"
 }
 
 write_polkit_rule() {
@@ -624,6 +680,7 @@ remove_pam_hook() {
 }
 
 lock_rule() {
+  apply_wifi_policy_for_greeter
   write_polkit_rule
   write_guard_script
   write_watch_script
@@ -654,6 +711,7 @@ unlock_rule() {
 
   sudo rm -f "$RULE_FILE" "$GUARD_SCRIPT" "$GUARD_UNIT" "$WATCH_SCRIPT" "$WATCH_UNIT" "$LOCK_STATE_FILE"
   remove_pam_hook
+  restore_wifi_policy_backup
   systemctl --user disable --now prelogin-login-radio-restore.service >/dev/null 2>&1 || true
   systemctl --user disable --now prelogin-unlock-radio-watch.service >/dev/null 2>&1 || true
   systemctl --user daemon-reload >/dev/null 2>&1 || true
@@ -722,6 +780,7 @@ status_rule() {
   [[ -f "$USER_UNLOCK_WATCH_HOOK" ]] && echo "  - $USER_UNLOCK_WATCH_HOOK" || echo "  - MISSING (user unlock hook): $USER_UNLOCK_WATCH_HOOK"
   [[ -f "$USER_UNLOCK_WATCH_UNIT" ]] && echo "  - $USER_UNLOCK_WATCH_UNIT" || echo "  - MISSING (user unlock hook): $USER_UNLOCK_WATCH_UNIT"
   file_present "$PAM_UNLOCK_RESTORE_HOOK" && echo "  - $PAM_UNLOCK_RESTORE_HOOK" || echo "  - MISSING (pam hook): $PAM_UNLOCK_RESTORE_HOOK"
+  [[ -f "$WIFI_POLICY_BACKUP_FILE" ]] && echo "  - $WIFI_POLICY_BACKUP_FILE (wifi policy backup)" || echo "  - MISSING (wifi policy backup): $WIFI_POLICY_BACKUP_FILE"
   while IFS= read -r pam_file; do
     backup="$(pam_backup_path "$pam_file")"
     file_present "$backup" && echo "  - $backup (backup for full revert)" || true

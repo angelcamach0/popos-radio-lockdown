@@ -15,6 +15,7 @@ On this COSMIC/Pop!_OS setup, `Lock` is visible but `Unlock` is not always emitt
 
 ## Files
 - `scripts/gdm_network_lockdown.sh`
+- `docs/QUICKSTART.md`
 - `docs/gdm_network_lockdown_revert_audit.md`
 - `docs/architecture.md`
 - `docs/online_research.md`
@@ -28,6 +29,19 @@ On this COSMIC/Pop!_OS setup, `Lock` is visible but `Unlock` is not always emitt
 ./scripts/gdm_network_lockdown.sh revert
 ```
 
+## Quick Validation
+Use `docs/QUICKSTART.md` for setup + smoke test + revert verification.
+
+## Compatibility
+This project is stable on tested COSMIC Pop!_OS setups, but not guaranteed to be independent of future COSMIC/PAM/NetworkManager updates.
+If an OS update changes behavior, the recommended recovery is:
+```bash
+./scripts/gdm_network_lockdown.sh revert
+./scripts/gdm_network_lockdown.sh lock
+```
+then rerun the smoke test from `docs/QUICKSTART.md`.
+
 ## Safety
 - `lock` installs files/services and PAM hook backups.
-- `revert` removes installed artifacts and restores PAM files from backups.
+- `lock` also snapshots the active Wi-Fi profile policy (`autoconnect` + `permissions`) and applies greeter-friendly policy.
+- `revert` removes installed artifacts, restores PAM files, and restores the saved Wi-Fi profile policy.
