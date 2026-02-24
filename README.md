@@ -35,9 +35,6 @@ On this COSMIC/Pop!_OS setup, `Lock` is visible but `Unlock` is not always emitt
 ## Quick Validation
 Use `docs/QUICKSTART.md` for setup + smoke test + revert verification.
 
-## Release
-Use `docs/RELEASE_CHECKLIST.md` before publishing tags/releases.
-
 ## Compatibility
 This project is stable on tested COSMIC Pop!_OS setups, but not guaranteed to be independent of future COSMIC/PAM/NetworkManager updates.
 If an OS update changes behavior, the recommended recovery is:
