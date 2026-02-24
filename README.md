@@ -72,6 +72,12 @@ Release assets include SHA256 checksum files:
 - `gdm_network_lockdown.sh.sha256`
 - `popos-radio-lockdown-minimal-v1.0.0.tar.gz.sha256`
 
+Published SHA256 values (v1.0.0):
+```text
+2464aafbfff7c42310d17391150d4ac4746715405b848d498fc4c8793a2f4ee7  gdm_network_lockdown.sh
+92b571ca91f2827de16c9da103e42d65eb5439b87a2e92c863c343330f533a51  popos-radio-lockdown-minimal-v1.0.0.tar.gz
+```
+
 Verify downloads:
 ```bash
 sha256sum -c gdm_network_lockdown.sh.sha256
