@@ -77,3 +77,11 @@ Verify downloads:
 sha256sum -c gdm_network_lockdown.sh.sha256
 sha256sum -c popos-radio-lockdown-minimal-v1.0.0.tar.gz.sha256
 ```
+
+Expected successful output:
+```text
+gdm_network_lockdown.sh: OK
+popos-radio-lockdown-minimal-v1.0.0.tar.gz: OK
+```
+
+If integrity check fails, output will include `FAILED` and you should re-download both the artifact and its `.sha256` file.
