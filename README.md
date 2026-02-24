@@ -66,3 +66,14 @@ Running `./scripts/gdm_network_lockdown.sh lock` automatically:
 - `--user <name>`: username for `policy-user-only` (defaults to current user).
 - `PRELOGIN_RADIO_DEBUG=1`: enable runtime debug logs for PAM/guard helpers.
 - `PRELOGIN_MANAGE_WIFI_POLICY=1`: enable lock/revert backup/restore of active Wi-Fi profile policy.
+
+## Release Integrity
+Release assets include SHA256 checksum files:
+- `gdm_network_lockdown.sh.sha256`
+- `popos-radio-lockdown-minimal-v1.0.0.tar.gz.sha256`
+
+Verify downloads:
+```bash
+sha256sum -c gdm_network_lockdown.sh.sha256
+sha256sum -c popos-radio-lockdown-minimal-v1.0.0.tar.gz.sha256
+```
