@@ -53,6 +53,14 @@ PRELOGIN_MANAGE_WIFI_POLICY=1 ./scripts/gdm_network_lockdown.sh lock
 PRELOGIN_MANAGE_WIFI_POLICY=1 ./scripts/gdm_network_lockdown.sh revert
 ```
 
+## What `lock` Sets Up
+Running `./scripts/gdm_network_lockdown.sh lock` automatically:
+- writes system scripts/units
+- enables and starts system services
+- writes the polkit rule for greeter restrictions
+- installs PAM hook and creates PAM file backups for clean revert
+- enables user restore/watch services
+
 ## Flags And Env
 - `--profile "<name>"`: target a specific Wi-Fi profile (supports spaces).
 - `--user <name>`: username for `policy-user-only` (defaults to current user).
