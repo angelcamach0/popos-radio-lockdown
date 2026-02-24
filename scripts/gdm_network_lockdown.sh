@@ -75,6 +75,59 @@ active_wifi_profile_name() {
   nmcli -t -f NAME,TYPE connection show --active 2>/dev/null | awk -F: '$2=="802-11-wireless"{print $1; exit}'
 }
 
+wifi_profile_exists() {
+  local profile="$1"
+  nmcli connection show "$profile" >/dev/null 2>&1
+}
+
+wifi_profile_autoconnect() {
+  local profile="$1"
+  nmcli -g connection.autoconnect connection show "$profile" 2>/dev/null || true
+}
+
+wifi_profile_permissions() {
+  local profile="$1"
+  nmcli -g connection.permissions connection show "$profile" 2>/dev/null || true
+}
+
+apply_wifi_profile_policy() {
+  local profile="$1"
+  local permissions="$2"
+  local autoconnect="$3"
+  nmcli connection modify "$profile" connection.permissions "$permissions" connection.autoconnect "$autoconnect" >/dev/null 2>&1 || \
+    sudo nmcli connection modify "$profile" connection.permissions "$permissions" connection.autoconnect "$autoconnect" >/dev/null 2>&1
+}
+
+parse_policy_args() {
+  POLICY_PROFILE=""
+  POLICY_USER="$USER"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --profile)
+        POLICY_PROFILE="${2:-}"
+        shift 2
+        ;;
+      --user)
+        POLICY_USER="${2:-}"
+        shift 2
+        ;;
+      *)
+        echo "Unknown option: $1" >&2
+        usage
+        exit 1
+        ;;
+    esac
+  done
+}
+
+resolve_policy_profile() {
+  local profile="$1"
+  if [[ -z "$profile" ]]; then
+    profile="$(active_wifi_profile_name || true)"
+  fi
+  printf '%s\n' "$profile"
+}
+
 backup_wifi_policy_once() {
   local profile ac perm
   mkdir -p "$POLICY_STATE_DIR"
@@ -105,8 +158,7 @@ apply_wifi_policy_for_greeter() {
   fi
   [[ -n "$profile" ]] || return 0
 
-  nmcli connection modify "$profile" connection.permissions "" connection.autoconnect yes >/dev/null 2>&1 || \
-    sudo nmcli connection modify "$profile" connection.permissions "" connection.autoconnect yes >/dev/null 2>&1 || true
+  apply_wifi_profile_policy "$profile" "" "yes" || true
 }
 
 restore_wifi_policy_backup() {
@@ -118,11 +170,74 @@ restore_wifi_policy_backup() {
   perm="$(sed -n 's/^PROFILE_PERMISSIONS=//p' "$WIFI_POLICY_BACKUP_FILE" | head -n1)"
 
   if [[ -n "$profile" ]] && nmcli connection show "$profile" >/dev/null 2>&1; then
-    nmcli connection modify "$profile" connection.permissions "$perm" connection.autoconnect "$ac" >/dev/null 2>&1 || \
-      sudo nmcli connection modify "$profile" connection.permissions "$perm" connection.autoconnect "$ac" >/dev/null 2>&1 || true
+    apply_wifi_profile_policy "$profile" "$perm" "$ac" || true
   fi
 
   rm -f "$WIFI_POLICY_BACKUP_FILE"
+}
+
+policy_status_rule() {
+  local profile ac perm
+  parse_policy_args "$@"
+  profile="$(resolve_policy_profile "$POLICY_PROFILE")"
+  if [[ -z "$profile" ]]; then
+    echo "No active Wi-Fi profile found. Pass one with --profile \"<name>\"."
+    return 1
+  fi
+  if ! wifi_profile_exists "$profile"; then
+    echo "Wi-Fi profile not found: $profile"
+    return 1
+  fi
+
+  ac="$(wifi_profile_autoconnect "$profile")"
+  perm="$(wifi_profile_permissions "$profile")"
+  [[ -z "$perm" ]] && perm="(all users)"
+
+  echo "Wi-Fi profile policy"
+  echo "  profile     : $profile"
+  echo "  autoconnect : $ac"
+  echo "  permissions : $perm"
+}
+
+policy_greeter_rule() {
+  local profile
+  parse_policy_args "$@"
+  profile="$(resolve_policy_profile "$POLICY_PROFILE")"
+  if [[ -z "$profile" ]]; then
+    echo "No active Wi-Fi profile found. Pass one with --profile \"<name>\"."
+    return 1
+  fi
+  if ! wifi_profile_exists "$profile"; then
+    echo "Wi-Fi profile not found: $profile"
+    return 1
+  fi
+
+  apply_wifi_profile_policy "$profile" "" "yes"
+  echo "Applied greeter-friendly policy to profile: $profile"
+  policy_status_rule --profile "$profile"
+}
+
+policy_user_only_rule() {
+  local profile user
+  parse_policy_args "$@"
+  profile="$(resolve_policy_profile "$POLICY_PROFILE")"
+  user="${POLICY_USER:-$USER}"
+  if [[ -z "$profile" ]]; then
+    echo "No active Wi-Fi profile found. Pass one with --profile \"<name>\"."
+    return 1
+  fi
+  if ! wifi_profile_exists "$profile"; then
+    echo "Wi-Fi profile not found: $profile"
+    return 1
+  fi
+  if [[ -z "$user" ]]; then
+    echo "Invalid user. Pass one with --user <name>."
+    return 1
+  fi
+
+  apply_wifi_profile_policy "$profile" "user:${user}" "yes"
+  echo "Applied user-only policy to profile: $profile (user: $user)"
+  policy_status_rule --profile "$profile"
 }
 
 write_polkit_rule() {
@@ -832,17 +947,35 @@ Usage:
   ./gdm_network_lockdown.sh lock
   ./gdm_network_lockdown.sh revert
   ./gdm_network_lockdown.sh status
+  ./gdm_network_lockdown.sh policy-status [--profile "<wifi profile>"]
+  ./gdm_network_lockdown.sh policy-greeter [--profile "<wifi profile>"]
+  ./gdm_network_lockdown.sh policy-user-only [--profile "<wifi profile>"] [--user <username>]
 
 Notes:
   lock   : enforce greeter + lock-screen radio lockdown and block gdm toggles.
   revert : remove lockdown files/services and restore normal behavior.
+  policy-status    : show Wi-Fi profile autoconnect/permissions.
+  policy-greeter   : set selected profile to autoconnect=yes and permissions="" (all users/greeter-capable).
+  policy-user-only : set selected profile to autoconnect=yes and permissions="user:<username>".
+
+Flags:
+  --profile "<name>" : target Wi-Fi profile by name (supports spaces).
+  --user <name>      : username for policy-user-only (defaults to current user).
+
+Env Flags:
+  PRELOGIN_RADIO_DEBUG=1        enable debug logs for guard/PAM helpers.
+  PRELOGIN_MANAGE_WIFI_POLICY=1 enable backup/restore of active Wi-Fi profile policy during lock/revert.
 USAGE_EOF
 }
 
 cmd="${1:-}"
+shift || true
 case "$cmd" in
-  lock) lock_rule ;;
-  revert) unlock_rule ;;
-  status) status_rule ;;
+  lock) lock_rule "$@" ;;
+  revert) unlock_rule "$@" ;;
+  status) status_rule "$@" ;;
+  policy-status) policy_status_rule "$@" ;;
+  policy-greeter) policy_greeter_rule "$@" ;;
+  policy-user-only) policy_user_only_rule "$@" ;;
   *) usage; exit 1 ;;
 esac

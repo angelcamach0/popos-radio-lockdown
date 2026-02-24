@@ -27,6 +27,9 @@ On this COSMIC/Pop!_OS setup, `Lock` is visible but `Unlock` is not always emitt
 ./scripts/gdm_network_lockdown.sh lock
 ./scripts/gdm_network_lockdown.sh status
 ./scripts/gdm_network_lockdown.sh revert
+./scripts/gdm_network_lockdown.sh policy-status [--profile "<wifi profile>"]
+./scripts/gdm_network_lockdown.sh policy-greeter [--profile "<wifi profile>"]
+./scripts/gdm_network_lockdown.sh policy-user-only [--profile "<wifi profile>"] [--user <username>]
 ```
 
 ## Quick Validation
@@ -49,3 +52,9 @@ then rerun the smoke test from `docs/QUICKSTART.md`.
 PRELOGIN_MANAGE_WIFI_POLICY=1 ./scripts/gdm_network_lockdown.sh lock
 PRELOGIN_MANAGE_WIFI_POLICY=1 ./scripts/gdm_network_lockdown.sh revert
 ```
+
+## Flags And Env
+- `--profile "<name>"`: target a specific Wi-Fi profile (supports spaces).
+- `--user <name>`: username for `policy-user-only` (defaults to current user).
+- `PRELOGIN_RADIO_DEBUG=1`: enable runtime debug logs for PAM/guard helpers.
+- `PRELOGIN_MANAGE_WIFI_POLICY=1`: enable lock/revert backup/restore of active Wi-Fi profile policy.

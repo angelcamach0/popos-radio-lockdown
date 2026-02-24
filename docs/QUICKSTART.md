@@ -21,6 +21,13 @@ Optional Wi-Fi policy mode (backup/apply/restore active profile permissions + au
 PRELOGIN_MANAGE_WIFI_POLICY=1 ./scripts/gdm_network_lockdown.sh lock
 ```
 
+Explicit policy commands:
+```bash
+./scripts/gdm_network_lockdown.sh policy-status
+./scripts/gdm_network_lockdown.sh policy-greeter --profile "CamachoFam-5G"
+./scripts/gdm_network_lockdown.sh policy-user-only --profile "CamachoFam-5G" --user "$USER"
+```
+
 ## Expected behavior
 - Lock screen or logout/greeter: radios forced OFF.
 - Unlock/login: radios restored ON once; user can toggle normally.
@@ -51,6 +58,12 @@ PRELOGIN_MANAGE_WIFI_POLICY=1 ./scripts/gdm_network_lockdown.sh revert
 ```
 
 After `revert`, reboot and confirm radios behave normally with no forced policy.
+
+## Flags reference
+- `--profile "<name>"`: target profile for `policy-*` commands.
+- `--user <name>`: user for `policy-user-only`.
+- `PRELOGIN_RADIO_DEBUG=1`: enable debug logs.
+- `PRELOGIN_MANAGE_WIFI_POLICY=1`: enable lock/revert profile backup/restore mode.
 
 ## Compatibility / update note
 This is robust on tested COSMIC Pop!_OS systems, but not fully independent of desktop updates.

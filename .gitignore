@@ -1,0 +1,12 @@
+# Runtime/debug artifacts
+*.log
+*.tmp
+*.swp
+*~
+
+# Optional local state backups (generated only if policy mode is enabled)
+.local/
+
+# Keep repo clean from accidental editor/OS files
+.DS_Store
+Thumbs.db
