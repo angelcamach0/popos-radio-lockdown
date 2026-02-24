@@ -68,26 +68,21 @@ Running `./scripts/gdm_network_lockdown.sh lock` automatically:
 - `PRELOGIN_MANAGE_WIFI_POLICY=1`: enable lock/revert backup/restore of active Wi-Fi profile policy.
 
 ## Release Integrity
-Release assets include SHA256 checksum files:
+Use the `.sha256` files attached to the release:
 - `gdm_network_lockdown.sh.sha256`
 - `popos-radio-lockdown-minimal-v1.0.0.tar.gz.sha256`
 
-Published SHA256 values (v1.0.0):
-```text
-2464aafbfff7c42310d17391150d4ac4746715405b848d498fc4c8793a2f4ee7  gdm_network_lockdown.sh
-92b571ca91f2827de16c9da103e42d65eb5439b87a2e92c863c343330f533a51  popos-radio-lockdown-minimal-v1.0.0.tar.gz
-```
+Reference hashes for `v1.0.0`:
+- `gdm_network_lockdown.sh`
+  `2464aafbfff7c42310d17391150d4ac4746715405b848d498fc4c8793a2f4ee7`
+- `popos-radio-lockdown-minimal-v1.0.0.tar.gz`
+  `92b571ca91f2827de16c9da103e42d65eb5439b87a2e92c863c343330f533a51`
 
-Verify downloads:
+Verify:
 ```bash
 sha256sum -c gdm_network_lockdown.sh.sha256
 sha256sum -c popos-radio-lockdown-minimal-v1.0.0.tar.gz.sha256
 ```
-
-Expected successful output:
-```text
-gdm_network_lockdown.sh: OK
-popos-radio-lockdown-minimal-v1.0.0.tar.gz: OK
-```
-
-If integrity check fails, output will include `FAILED` and you should re-download both the artifact and its `.sha256` file.
+Expected:
+- `...: OK` for each file
+- `...: FAILED` means re-download artifact + checksum file
