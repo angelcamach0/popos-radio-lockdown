@@ -26,7 +26,7 @@ On this COSMIC/Pop!_OS setup, `Lock` is visible but `Unlock` is not always emitt
 ```bash
 ./scripts/gdm_network_lockdown.sh lock
 ./scripts/gdm_network_lockdown.sh status
-./scripts/gdm_network_lockdown.sh revert
+./scripts/gdm_network_lockdown.sh revert [--strict|--smart [--greeter-autoconnect]]
 ./scripts/gdm_network_lockdown.sh policy-status [--profile "<wifi profile>"]
 ./scripts/gdm_network_lockdown.sh policy-greeter [--profile "<wifi profile>"]
 ./scripts/gdm_network_lockdown.sh policy-user-only [--profile "<wifi profile>"] [--user <username>]
@@ -47,10 +47,12 @@ then rerun the smoke test from `docs/QUICKSTART.md`.
 ## Safety
 - `lock` installs files/services and PAM hook backups.
 - `revert` removes installed artifacts and restores PAM files.
-- Optional Wi-Fi policy backup/restore is available only when enabled with:
+- `revert --strict` (default) does not modify Wi-Fi profile policy.
+- `revert --smart` sets `connection.autoconnect=yes` on detected candidate Wi-Fi profile(s).
+- `revert --smart --greeter-autoconnect` also sets `connection.permissions=""` for greeter-capable autoconnect.
+- Optional Wi-Fi policy snapshot capture (used as a smart-revert candidate hint) can be enabled with:
 ```bash
 PRELOGIN_MANAGE_WIFI_POLICY=1 ./scripts/gdm_network_lockdown.sh lock
-PRELOGIN_MANAGE_WIFI_POLICY=1 ./scripts/gdm_network_lockdown.sh revert
 ```
 
 ## What `lock` Sets Up
@@ -62,10 +64,13 @@ Running `./scripts/gdm_network_lockdown.sh lock` automatically:
 - enables user restore/watch services
 
 ## Flags And Env
+- `--strict`: revert without changing Wi-Fi profile policy.
+- `--smart`: revert and recover profile policy by setting autoconnect on candidate profile(s).
+- `--greeter-autoconnect`: with `--smart`, also set permissions to `""`.
 - `--profile "<name>"`: target a specific Wi-Fi profile (supports spaces).
 - `--user <name>`: username for `policy-user-only` (defaults to current user).
 - `PRELOGIN_RADIO_DEBUG=1`: enable runtime debug logs for PAM/guard helpers.
-- `PRELOGIN_MANAGE_WIFI_POLICY=1`: enable lock/revert backup/restore of active Wi-Fi profile policy.
+- `PRELOGIN_MANAGE_WIFI_POLICY=1`: capture active Wi-Fi profile policy during `lock` for smarter `revert --smart` profile detection.
 
 ## Release Integrity
 Use the `.sha256` files attached to the release:

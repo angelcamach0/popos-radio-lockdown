@@ -120,6 +120,38 @@ parse_policy_args() {
   done
 }
 
+parse_revert_args() {
+  REVERT_MODE="strict"
+  REVERT_GREETER_AUTOCONNECT=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --strict)
+        REVERT_MODE="strict"
+        shift
+        ;;
+      --smart)
+        REVERT_MODE="smart"
+        shift
+        ;;
+      --greeter-autoconnect)
+        REVERT_GREETER_AUTOCONNECT=1
+        shift
+        ;;
+      *)
+        echo "Unknown option for revert: $1" >&2
+        usage
+        exit 1
+        ;;
+    esac
+  done
+
+  if [[ "$REVERT_GREETER_AUTOCONNECT" == "1" && "$REVERT_MODE" != "smart" ]]; then
+    echo "--greeter-autoconnect requires --smart." >&2
+    usage
+    exit 1
+  fi
+}
+
 resolve_policy_profile() {
   local profile="$1"
   if [[ -z "$profile" ]]; then
@@ -174,6 +206,89 @@ restore_wifi_policy_backup() {
   fi
 
   rm -f "$WIFI_POLICY_BACKUP_FILE"
+}
+
+set_wifi_profile_autoconnect() {
+  local profile="$1"
+  local autoconnect="$2"
+  nmcli connection modify "$profile" connection.autoconnect "$autoconnect" >/dev/null 2>&1 || \
+    sudo nmcli connection modify "$profile" connection.autoconnect "$autoconnect" >/dev/null 2>&1
+}
+
+last_used_wifi_profile_name() {
+  nmcli -t -f NAME,TYPE,TIMESTAMP connection show 2>/dev/null | awk -F: '
+    $2=="802-11-wireless" {
+      ts=$3
+      gsub(/[^0-9]/, "", ts)
+      if (ts == "") ts=0
+      if (ts >= best_ts) {
+        best_ts=ts
+        best=$1
+      }
+    }
+    END {
+      if (best != "")
+        print best
+    }
+  '
+}
+
+candidate_wifi_profiles_for_smart_revert() {
+  local profile
+  if [[ -f "$WIFI_POLICY_BACKUP_FILE" ]]; then
+    profile="$(sed -n 's/^PROFILE_NAME=//p' "$WIFI_POLICY_BACKUP_FILE" | head -n1)"
+    if [[ -n "$profile" ]] && wifi_profile_exists "$profile"; then
+      printf '%s\n' "$profile"
+    fi
+  fi
+
+  profile="$(active_wifi_profile_name || true)"
+  if [[ -n "$profile" ]] && wifi_profile_exists "$profile"; then
+    printf '%s\n' "$profile"
+  fi
+
+  profile="$(last_used_wifi_profile_name || true)"
+  if [[ -n "$profile" ]] && wifi_profile_exists "$profile"; then
+    printf '%s\n' "$profile"
+  fi
+}
+
+apply_smart_revert_policy() {
+  local profile current_perm updated=0
+
+  echo "Revert mode: smart"
+  if [[ "$REVERT_GREETER_AUTOCONNECT" == "1" ]]; then
+    echo "Policy target: greeter-capable autoconnect (permissions=\"\")."
+  else
+    echo "Policy target: autoconnect=yes with existing permissions unchanged."
+  fi
+  echo "Policy changes:"
+
+  while IFS= read -r profile; do
+    [[ -n "$profile" ]] || continue
+
+    if [[ "$REVERT_GREETER_AUTOCONNECT" == "1" ]]; then
+      if apply_wifi_profile_policy "$profile" "" "yes"; then
+        echo "  - $profile: autoconnect=yes, permissions=\"\""
+        updated=1
+      else
+        echo "  - $profile: FAILED (could not set autoconnect=yes permissions=\"\")"
+      fi
+    else
+      current_perm="$(wifi_profile_permissions "$profile")"
+      [[ -z "$current_perm" ]] && current_perm="(all users)"
+      if set_wifi_profile_autoconnect "$profile" "yes"; then
+        echo "  - $profile: autoconnect=yes, permissions unchanged ($current_perm)"
+        updated=1
+      else
+        echo "  - $profile: FAILED (could not set autoconnect=yes)"
+      fi
+    fi
+  done < <(candidate_wifi_profiles_for_smart_revert | awk '!seen[$0]++')
+
+  if [[ "$updated" -eq 0 ]]; then
+    echo "  - none: no candidate Wi-Fi profiles found to update"
+  fi
 }
 
 policy_status_rule() {
@@ -825,13 +940,11 @@ lock_rule() {
 }
 
 unlock_rule() {
+  parse_revert_args "$@"
   sudo systemctl disable --now "$GUARD_UNIT_NAME" "$WATCH_UNIT_NAME" 2>/dev/null || true
 
   sudo rm -f "$RULE_FILE" "$GUARD_SCRIPT" "$GUARD_UNIT" "$WATCH_SCRIPT" "$WATCH_UNIT" "$LOCK_STATE_FILE"
   remove_pam_hook
-  if [[ "$MANAGE_WIFI_POLICY" == "1" ]]; then
-    restore_wifi_policy_backup
-  fi
   systemctl --user disable --now prelogin-login-radio-restore.service >/dev/null 2>&1 || true
   systemctl --user disable --now prelogin-unlock-radio-watch.service >/dev/null 2>&1 || true
   systemctl --user daemon-reload >/dev/null 2>&1 || true
@@ -846,6 +959,12 @@ unlock_rule() {
   rfkill unblock bluetooth >/dev/null 2>&1 || true
 
   echo "Unlocked: removed all lockdown files/services and restored normal radio behavior."
+  if [[ "$REVERT_MODE" == "smart" ]]; then
+    apply_smart_revert_policy
+  else
+    echo "Revert mode: strict (Wi-Fi profile policy unchanged)."
+  fi
+  rm -f "$WIFI_POLICY_BACKUP_FILE"
 }
 
 status_rule() {
@@ -945,7 +1064,7 @@ usage() {
   cat <<'USAGE_EOF'
 Usage:
   ./gdm_network_lockdown.sh lock
-  ./gdm_network_lockdown.sh revert
+  ./gdm_network_lockdown.sh revert [--strict|--smart [--greeter-autoconnect]]
   ./gdm_network_lockdown.sh status
   ./gdm_network_lockdown.sh policy-status [--profile "<wifi profile>"]
   ./gdm_network_lockdown.sh policy-greeter [--profile "<wifi profile>"]
@@ -953,18 +1072,21 @@ Usage:
 
 Notes:
   lock   : enforce greeter + lock-screen radio lockdown and block gdm toggles.
-  revert : remove lockdown files/services and restore normal behavior.
+  revert : strict (default) or smart policy recovery mode, then remove lockdown files/services.
   policy-status    : show Wi-Fi profile autoconnect/permissions.
   policy-greeter   : set selected profile to autoconnect=yes and permissions="" (all users/greeter-capable).
   policy-user-only : set selected profile to autoconnect=yes and permissions="user:<username>".
 
 Flags:
+  --strict            : revert without changing Wi-Fi profile policy (default).
+  --smart             : revert and set autoconnect=yes on candidate Wi-Fi profile(s).
+  --greeter-autoconnect : with --smart, also set permissions="" for greeter-capable autoconnect.
   --profile "<name>" : target Wi-Fi profile by name (supports spaces).
   --user <name>      : username for policy-user-only (defaults to current user).
 
 Env Flags:
   PRELOGIN_RADIO_DEBUG=1        enable debug logs for guard/PAM helpers.
-  PRELOGIN_MANAGE_WIFI_POLICY=1 enable backup/restore of active Wi-Fi profile policy during lock/revert.
+  PRELOGIN_MANAGE_WIFI_POLICY=1 enable backup snapshot of active Wi-Fi profile policy during lock.
 USAGE_EOF
 }
 
