@@ -16,7 +16,7 @@ chmod +x scripts/gdm_network_lockdown.sh
 ./scripts/gdm_network_lockdown.sh status
 ```
 
-Optional Wi-Fi policy mode (backup/apply/restore active profile permissions + autoconnect):
+Optional Wi-Fi policy snapshot mode (captures active profile policy during `lock` to help smart revert candidate selection):
 ```bash
 PRELOGIN_MANAGE_WIFI_POLICY=1 ./scripts/gdm_network_lockdown.sh lock
 ```
@@ -33,7 +33,8 @@ Explicit policy commands:
 - Unlock/login: radios restored ON once; user can toggle normally.
 - Reboot: policy persists while locked.
 - By default, Wi-Fi profile policy is untouched.
-- Optional: with `PRELOGIN_MANAGE_WIFI_POLICY=1`, active profile policy is backed up, set for greeter-friendly autoconnect, and restored on revert.
+- Optional: use `revert --smart` to set `autoconnect=yes` on candidate Wi-Fi profile(s).
+- Optional: add `--greeter-autoconnect` to also set `permissions=""` for greeter auto-connect.
 
 ## Smoke test (recommended)
 1. Lock/unlock once.
@@ -48,22 +49,27 @@ rfkill list | sed -n '1,40p'
 
 ## Disable / Remove (full revert)
 ```bash
-./scripts/gdm_network_lockdown.sh revert
+./scripts/gdm_network_lockdown.sh revert --strict
 ./scripts/gdm_network_lockdown.sh status
 ```
 
-If you enabled Wi-Fi policy mode:
+Smart revert options:
 ```bash
-PRELOGIN_MANAGE_WIFI_POLICY=1 ./scripts/gdm_network_lockdown.sh revert
+./scripts/gdm_network_lockdown.sh revert --smart
+./scripts/gdm_network_lockdown.sh revert --smart --greeter-autoconnect
+./scripts/gdm_network_lockdown.sh status
 ```
 
 After `revert`, reboot and confirm radios behave normally with no forced policy.
 
 ## Flags reference
+- `--strict`: revert without changing Wi-Fi profile policy (default).
+- `--smart`: revert and set autoconnect on candidate Wi-Fi profile(s).
+- `--greeter-autoconnect`: with `--smart`, also set `permissions=""`.
 - `--profile "<name>"`: target profile for `policy-*` commands.
 - `--user <name>`: user for `policy-user-only`.
 - `PRELOGIN_RADIO_DEBUG=1`: enable debug logs.
-- `PRELOGIN_MANAGE_WIFI_POLICY=1`: enable lock/revert profile backup/restore mode.
+- `PRELOGIN_MANAGE_WIFI_POLICY=1`: capture active Wi-Fi profile policy during `lock` for smart revert candidate hints.
 
 ## Compatibility / update note
 This is robust on tested COSMIC Pop!_OS systems, but not fully independent of desktop updates.

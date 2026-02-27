@@ -14,7 +14,9 @@ chmod +x gdm_network_lockdown.sh
 
 ## 3) Disable and remove
 ```bash
-./gdm_network_lockdown.sh revert
+./gdm_network_lockdown.sh revert --strict
+./gdm_network_lockdown.sh revert --smart
+./gdm_network_lockdown.sh revert --smart --greeter-autoconnect
 ./gdm_network_lockdown.sh status
 ```
 
