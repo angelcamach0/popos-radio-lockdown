@@ -1,4 +1,5 @@
 # Pop!_OS Radio Lockdown (Lockout/Logout)
+[![CI Smoke Checks](https://github.com/angelcamach0/popos-radio-lockdown/actions/workflows/ci-smoke.yml/badge.svg)](https://github.com/angelcamach0/popos-radio-lockdown/actions/workflows/ci-smoke.yml)
 
 Purpose: enforce Wi-Fi/WWAN/Bluetooth OFF on lock screen and logout/greeter, then restore ON after successful unlock/login.
 
