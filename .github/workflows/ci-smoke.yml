@@ -1,0 +1,45 @@
+name: CI Smoke Checks
+
+on:
+  pull_request:
+  push:
+    branches:
+      - '**'
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Bash syntax check
+        run: bash -n scripts/gdm_network_lockdown.sh
+
+      - name: Usage output check
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="$(bash scripts/gdm_network_lockdown.sh 2>&1 || true)"
+          echo "$output"
+          grep -Fq "Usage:" <<<"$output"
+          grep -Fq "./gdm_network_lockdown.sh lock" <<<"$output"
+          grep -Fq "./gdm_network_lockdown.sh revert" <<<"$output"
+          grep -Fq "./gdm_network_lockdown.sh status" <<<"$output"
+
+      - name: Verify release artifacts on tags
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          test -f dist/gdm_network_lockdown.sh
+          test -f dist/gdm_network_lockdown.sh.sha256
+          test -f "dist/popos-radio-lockdown-minimal-${tag}.tar.gz"
+          test -f "dist/popos-radio-lockdown-minimal-${tag}.tar.gz.sha256"
