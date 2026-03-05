@@ -34,15 +34,21 @@ On this COSMIC/Pop!_OS setup, `Lock` is visible but `Unlock` is not always emitt
 ./scripts/gdm_network_lockdown.sh tui
 ```
 
+### Reconnect Mode
+- Control unlock/login reconnect behavior: `--restore-mode auto` (default) or `--restore-mode manual`.
+- Example: `./scripts/gdm_network_lockdown.sh lock --restore-mode manual` keeps radios under your control after unlock/login (no auto reconnect).
+- `status` shows the current restore mode; `revert` cleans up the config and returns to defaults.
+
 ### Interactive Mode
 - Run `./scripts/gdm_network_lockdown.sh tui` for a guided menu.
-- Options cover lock, status, all revert modes, and policy helpers.
+- Options cover lock, status, restore-mode selection, all revert modes, and policy helpers.
 - Destructive/system-changing steps ask for confirmation and show results before returning to the menu.
 - Quick walkthrough:
-  - Choose `1` to apply lockdown, then confirm; you’ll see a success/fail line when done.
-  - Choose `3/4/5` for revert variants; smart modes restore Wi‑Fi autoconnect, and you’ll get a status line on completion.
+  - Pick **Lock** to apply lockdown (you’ll be prompted to confirm).
+  - Use **Set restore mode** to choose auto reconnect or manual control after unlock/login.
+  - **Revert** entries cover strict, smart, and smart+greeter modes; smart variants restore Wi‑Fi autoconnect.
   - Policy helpers prompt for a profile (or auto-detect) and user when needed, validate inputs, and report success/failure.
-  - Press Enter after each action to return to the menu; `9` exits.
+  - Press Enter after each action to return to the menu; **Exit** leaves the TUI.
 
 ## Quick Validation
 Use `docs/QUICKSTART.md` for setup + smoke test + revert verification.

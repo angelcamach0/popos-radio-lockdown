@@ -21,6 +21,8 @@ LOCK_STATE_FILE="/run/prelogin-radio-lock.session"
 UNLOCK_REQUEST_FILE="/tmp/prelogin-radio-unlock.request"
 unlock_grace_until=0
 GUARD_LOG_FILE="/run/prelogin-guard.log"
+RESTORE_MODE_FILE="/etc/prelogin-radio-restore.conf"
+DEFAULT_RESTORE_MODE="auto"
 
 confirm() {
   local prompt="${1:-Proceed?}"
@@ -144,6 +146,53 @@ parse_policy_args() {
         ;;
     esac
   done
+}
+
+validate_restore_mode() {
+  case "$1" in
+    auto|manual) ;;
+    *)
+      echo "Invalid restore mode: $1 (expected auto|manual)" >&2
+      return 1
+      ;;
+  esac
+}
+
+read_restore_mode() {
+  RESTORE_MODE="$DEFAULT_RESTORE_MODE"
+  if [[ -r "$RESTORE_MODE_FILE" ]]; then
+    local val
+    val="$(sed -n 's/^restore_mode=//p' "$RESTORE_MODE_FILE" 2>/dev/null | head -n1 || true)"
+    case "$val" in
+      auto|manual) RESTORE_MODE="$val" ;;
+      *) ;;
+    esac
+  fi
+}
+
+persist_restore_mode() {
+  local mode="$1"
+  validate_restore_mode "$mode"
+  echo "restore_mode=$mode" | sudo tee "$RESTORE_MODE_FILE" >/dev/null
+  sudo chmod 644 "$RESTORE_MODE_FILE" >/dev/null 2>&1 || true
+}
+
+parse_lock_args() {
+  read_restore_mode
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --restore-mode)
+        RESTORE_MODE="${2:-}"
+        shift 2
+        ;;
+      *)
+        echo "Unknown option for lock: $1" >&2
+        usage
+        exit 1
+        ;;
+    esac
+  done
+  validate_restore_mode "$RESTORE_MODE"
 }
 
 parse_revert_args() {
@@ -430,9 +479,22 @@ LOCK_STATE_FILE="/run/prelogin-radio-lock.session"
 UNLOCK_REQUEST_FILE="/tmp/prelogin-radio-unlock.request"
 GUARD_LOG_FILE="/run/prelogin-guard.log"
 unlock_grace_until=0
+RESTORE_MODE_FILE="/etc/prelogin-radio-restore.conf"
+DEFAULT_RESTORE_MODE="auto"
 
 log_guard() {
   printf '%s %s\n' "$(date '+%F %T')" "$*" >> "$GUARD_LOG_FILE" 2>/dev/null || true
+}
+
+read_restore_mode() {
+  restore_mode="$DEFAULT_RESTORE_MODE"
+  if [[ -r "$RESTORE_MODE_FILE" ]]; then
+    val="$(sed -n 's/^restore_mode=//p' "$RESTORE_MODE_FILE" 2>/dev/null | head -n1 || true)"
+    case "$val" in
+      auto|manual) restore_mode="$val" ;;
+      *) ;;
+    esac
+  fi
 }
 
 write_unlocked_override() {
@@ -492,13 +554,16 @@ force_restricted() {
 }
 
 force_user_ready_once() {
-  log_guard "action=force_user_ready_once"
-  # Clear global networking/airplane-mode state first, then restore radios.
-  /usr/bin/nmcli networking on >/dev/null 2>&1 || true
+  read_restore_mode
+  log_guard "action=force_user_ready_once mode=$restore_mode"
+  # Always unblock rfkill so user can toggle radios in manual mode.
   /usr/sbin/rfkill unblock wlan >/dev/null 2>&1 || true
   /usr/sbin/rfkill unblock bluetooth >/dev/null 2>&1 || true
-  /usr/bin/nmcli radio wifi on >/dev/null 2>&1 || true
-  /usr/bin/nmcli radio wwan on >/dev/null 2>&1 || true
+  if [[ "$restore_mode" == "auto" ]]; then
+    /usr/bin/nmcli networking on >/dev/null 2>&1 || true
+    /usr/bin/nmcli radio wifi on >/dev/null 2>&1 || true
+    /usr/bin/nmcli radio wwan on >/dev/null 2>&1 || true
+  fi
 }
 
 state="unknown"
@@ -696,12 +761,30 @@ write_user_login_restore_hook() {
 #!/usr/bin/env bash
 set -euo pipefail
 
+RESTORE_MODE_FILE="/etc/prelogin-radio-restore.conf"
+DEFAULT_RESTORE_MODE="auto"
+
+read_restore_mode() {
+  restore_mode="$DEFAULT_RESTORE_MODE"
+  if [[ -r "$RESTORE_MODE_FILE" ]]; then
+    val="$(sed -n 's/^restore_mode=//p' "$RESTORE_MODE_FILE" 2>/dev/null | head -n1 || true)"
+    case "$val" in
+      auto|manual) restore_mode="$val" ;;
+      *) ;;
+    esac
+  fi
+}
+
 # One-shot user-session restore to cover cases where lock/unlock signal timing
 # does not trigger guard-side restore quickly enough.
-/usr/bin/nmcli networking on >/dev/null 2>&1 || true
+read_restore_mode
 /usr/sbin/rfkill unblock wlan >/dev/null 2>&1 || true
-/usr/bin/nmcli radio wifi on >/dev/null 2>&1 || true
-/usr/bin/nmcli radio wwan on >/dev/null 2>&1 || true
+/usr/sbin/rfkill unblock bluetooth >/dev/null 2>&1 || true
+if [[ "$restore_mode" == "auto" ]]; then
+  /usr/bin/nmcli networking on >/dev/null 2>&1 || true
+  /usr/bin/nmcli radio wifi on >/dev/null 2>&1 || true
+  /usr/bin/nmcli radio wwan on >/dev/null 2>&1 || true
+fi
 HOOK_EOF
   chmod 755 "$USER_LOGIN_RESTORE_HOOK"
 
@@ -740,12 +823,29 @@ write_user_unlock_watch_hook() {
 #!/usr/bin/env bash
 set -euo pipefail
 
+RESTORE_MODE_FILE="/etc/prelogin-radio-restore.conf"
+DEFAULT_RESTORE_MODE="auto"
+
+read_restore_mode() {
+  restore_mode="$DEFAULT_RESTORE_MODE"
+  if [[ -r "$RESTORE_MODE_FILE" ]]; then
+    val="$(sed -n 's/^restore_mode=//p' "$RESTORE_MODE_FILE" 2>/dev/null | head -n1 || true)"
+    case "$val" in
+      auto|manual) restore_mode="$val" ;;
+      *) ;;
+    esac
+  fi
+}
+
 restore_radios() {
-  /usr/bin/nmcli networking on >/dev/null 2>&1 || true
+  read_restore_mode
   /usr/sbin/rfkill unblock wlan >/dev/null 2>&1 || true
   /usr/sbin/rfkill unblock bluetooth >/dev/null 2>&1 || true
-  /usr/bin/nmcli radio wifi on >/dev/null 2>&1 || true
-  /usr/bin/nmcli radio wwan on >/dev/null 2>&1 || true
+  if [[ "$restore_mode" == "auto" ]]; then
+    /usr/bin/nmcli networking on >/dev/null 2>&1 || true
+    /usr/bin/nmcli radio wifi on >/dev/null 2>&1 || true
+    /usr/bin/nmcli radio wwan on >/dev/null 2>&1 || true
+  fi
 }
 
 # User-session lock/unlock watcher.
@@ -799,10 +899,23 @@ set -euo pipefail
 LOCK_STATE_FILE="/run/prelogin-radio-lock.session"
 LOG_FILE="/tmp/prelogin-pam-radio-restore.log"
 UNLOCK_REQUEST_FILE="/tmp/prelogin-radio-unlock.request"
+RESTORE_MODE_FILE="/etc/prelogin-radio-restore.conf"
+DEFAULT_RESTORE_MODE="auto"
 
 log() {
   [[ "${PRELOGIN_RADIO_DEBUG:-0}" == "1" ]] || return 0
   printf '%s %s\n' "$(date '+%F %T')" "$*" >> "$LOG_FILE" 2>/dev/null || true
+}
+
+read_restore_mode() {
+  restore_mode="$DEFAULT_RESTORE_MODE"
+  if [[ -r "$RESTORE_MODE_FILE" ]]; then
+    val="$(sed -n 's/^restore_mode=//p' "$RESTORE_MODE_FILE" 2>/dev/null | head -n1 || true)"
+    case "$val" in
+      auto|manual) restore_mode="$val" ;;
+      *) ;;
+    esac
+  fi
 }
 
 # Only act on post-auth phases.
@@ -872,11 +985,14 @@ write_unlocked_state() {
 }
 
 restore_radios() {
-  /usr/bin/nmcli networking on >/dev/null 2>&1 || true
+  read_restore_mode
   /usr/sbin/rfkill unblock wlan >/dev/null 2>&1 || true
   /usr/sbin/rfkill unblock bluetooth >/dev/null 2>&1 || true
-  /usr/bin/nmcli radio wifi on >/dev/null 2>&1 || true
-  /usr/bin/nmcli radio wwan on >/dev/null 2>&1 || true
+  if [[ "$restore_mode" == "auto" ]]; then
+    /usr/bin/nmcli networking on >/dev/null 2>&1 || true
+    /usr/bin/nmcli radio wifi on >/dev/null 2>&1 || true
+    /usr/bin/nmcli radio wwan on >/dev/null 2>&1 || true
+  fi
 }
 
 request_root_restore() {
@@ -937,6 +1053,8 @@ remove_pam_hook() {
 }
 
 lock_rule() {
+  parse_lock_args "$@"
+  persist_restore_mode "$RESTORE_MODE"
   if [[ "$MANAGE_WIFI_POLICY" == "1" ]]; then
     apply_wifi_policy_for_greeter
   fi
@@ -962,14 +1080,18 @@ lock_rule() {
   systemctl --user enable --now prelogin-unlock-radio-watch.service >/dev/null 2>&1 || true
 
   echo "Locked: login screen controls blocked; lock/logout force radios OFF."
-  echo "Unlock/login re-enables radios once per unlock/login event; user can toggle normally afterward."
+  if [[ "$RESTORE_MODE" == "auto" ]]; then
+    echo "Unlock/login re-enables radios (auto reconnect)."
+  else
+    echo "Unlock/login leaves radios manual (no auto reconnect; you can enable Wi-Fi/WWAN manually)."
+  fi
 }
 
 unlock_rule() {
   parse_revert_args "$@"
   sudo systemctl disable --now "$GUARD_UNIT_NAME" "$WATCH_UNIT_NAME" 2>/dev/null || true
 
-  sudo rm -f "$RULE_FILE" "$GUARD_SCRIPT" "$GUARD_UNIT" "$WATCH_SCRIPT" "$WATCH_UNIT" "$LOCK_STATE_FILE"
+  sudo rm -f "$RULE_FILE" "$GUARD_SCRIPT" "$GUARD_UNIT" "$WATCH_SCRIPT" "$WATCH_UNIT" "$LOCK_STATE_FILE" "$RESTORE_MODE_FILE"
   remove_pam_hook
   systemctl --user disable --now prelogin-login-radio-restore.service >/dev/null 2>&1 || true
   systemctl --user disable --now prelogin-unlock-radio-watch.service >/dev/null 2>&1 || true
@@ -1075,6 +1197,15 @@ status_rule() {
     echo "Watcher state file: absent"
   fi
 
+  read_restore_mode
+  echo
+  echo "Reconnect restore mode: $RESTORE_MODE"
+  if [[ "$RESTORE_MODE" == "auto" ]]; then
+    echo "  - Unlock/login will re-enable radios (auto reconnect)."
+  else
+    echo "  - Unlock/login will leave radios manual (no auto reconnect; enable Wi-Fi/WWAN yourself)."
+  fi
+
   if [[ "$rule_note" == "yes" ]]; then
     echo
     echo "Note: $RULE_FILE exists under a root-only directory; this is normal on some systems."
@@ -1108,6 +1239,7 @@ Flags:
   --strict            : revert without changing Wi-Fi profile policy (default).
   --smart             : revert and set autoconnect=yes on candidate Wi-Fi profile(s).
   --greeter-autoconnect : with --smart, also set permissions="" for greeter-capable autoconnect.
+  --restore-mode <auto|manual> : set unlock/login reconnect behavior (lock only; default=auto).
   --profile "<name>" : target Wi-Fi profile by name (supports spaces).
   --user <name>      : username for policy-user-only (defaults to current user).
 
@@ -1126,15 +1258,16 @@ run_tui() {
     echo "-------------------------------------"
     echo "1) Lock (install/enable lockdown)"
     echo "2) Status"
-    echo "3) Revert (strict)"
-    echo "4) Revert (smart)"
-    echo "5) Revert (smart + greeter autoconnect)"
-    echo "6) Policy status"
-    echo "7) Policy greeter (autoconnect for all users)"
-    echo "8) Policy user-only"
-    echo "9) Exit"
+    echo "3) Set restore mode (auto/manual)"
+    echo "4) Revert (strict)"
+    echo "5) Revert (smart)"
+    echo "6) Revert (smart + greeter autoconnect)"
+    echo "7) Policy status"
+    echo "8) Policy greeter (autoconnect for all users)"
+    echo "9) Policy user-only"
+    echo "10) Exit"
     echo ""
-    read -rp "Choose an option [1-9]: " choice || choice=""
+    read -rp "Choose an option [1-10]: " choice || choice=""
 
     case "$choice" in
       1)
@@ -1150,6 +1283,22 @@ run_tui() {
         pause_for_enter
         ;;
       3)
+        read_restore_mode
+        echo "Current restore mode: $RESTORE_MODE (auto reconnect on unlock/login vs manual control)"
+        read -rp "Enter restore mode [auto/manual] (default: $RESTORE_MODE): " mode || mode=""
+        if [[ -z "$mode" ]]; then
+          mode="$RESTORE_MODE"
+        fi
+        if validate_restore_mode "$mode"; then
+          if run_action "Set restore mode" persist_restore_mode "$mode"; then
+            echo "Restore mode saved: $mode."
+          fi
+        else
+          echo "Invalid restore mode. Use auto or manual."
+        fi
+        pause_for_enter
+        ;;
+      4)
         if confirm "Run REVERT --strict (removes lockdown files/services)?"; then
           run_action "Revert (strict)" unlock_rule --strict
         else
@@ -1157,7 +1306,7 @@ run_tui() {
         fi
         pause_for_enter
         ;;
-      4)
+      5)
         if confirm "Run REVERT --smart (sets autoconnect=yes on candidate Wi-Fi profiles)?"; then
           run_action "Revert (smart)" unlock_rule --smart
         else
@@ -1165,7 +1314,7 @@ run_tui() {
         fi
         pause_for_enter
         ;;
-      5)
+      6)
         if confirm "Run REVERT --smart --greeter-autoconnect (autoconnect + permissions=\"\")?"; then
           run_action "Revert (smart + greeter autoconnect)" unlock_rule --smart --greeter-autoconnect
         else
@@ -1173,7 +1322,7 @@ run_tui() {
         fi
         pause_for_enter
         ;;
-      6)
+      7)
         read -rp "Wi-Fi profile name (leave blank to auto-detect): " profile || profile=""
         if [[ -n "$profile" ]]; then
           run_action "Policy status" policy_status_rule --profile "$profile" || echo "Policy status failed (profile not found?)."
@@ -1182,7 +1331,7 @@ run_tui() {
         fi
         pause_for_enter
         ;;
-      7)
+      8)
         read -rp "Wi-Fi profile name (leave blank to auto-detect): " profile || profile=""
         if confirm "Apply greeter-friendly policy (autoconnect=yes, permissions=\"\")?"; then
           if [[ -n "$profile" ]]; then
@@ -1195,7 +1344,7 @@ run_tui() {
         fi
         pause_for_enter
         ;;
-      8)
+      9)
         read -rp "Wi-Fi profile name (leave blank to auto-detect): " profile || profile=""
         read -rp "Username for policy (leave blank for current user: $USER): " user || user=""
         if [[ -n "$user" && "$user" =~ [[:space:]:] ]]; then
@@ -1222,12 +1371,12 @@ run_tui() {
         fi
         pause_for_enter
         ;;
-      9)
+      10)
         echo "Goodbye."
         return 0
         ;;
       *)
-        echo "Invalid selection. Choose 1-9."
+        echo "Invalid selection. Choose 1-10."
         pause_for_enter
         ;;
     esac
