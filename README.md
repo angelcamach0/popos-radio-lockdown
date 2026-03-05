@@ -31,7 +31,18 @@ On this COSMIC/Pop!_OS setup, `Lock` is visible but `Unlock` is not always emitt
 ./scripts/gdm_network_lockdown.sh policy-status [--profile "<wifi profile>"]
 ./scripts/gdm_network_lockdown.sh policy-greeter [--profile "<wifi profile>"]
 ./scripts/gdm_network_lockdown.sh policy-user-only [--profile "<wifi profile>"] [--user <username>]
+./scripts/gdm_network_lockdown.sh tui
 ```
+
+### Interactive Mode
+- Run `./scripts/gdm_network_lockdown.sh tui` for a guided menu.
+- Options cover lock, status, all revert modes, and policy helpers.
+- Destructive/system-changing steps ask for confirmation and show results before returning to the menu.
+- Quick walkthrough:
+  - Choose `1` to apply lockdown, then confirm; you’ll see a success/fail line when done.
+  - Choose `3/4/5` for revert variants; smart modes restore Wi‑Fi autoconnect, and you’ll get a status line on completion.
+  - Policy helpers prompt for a profile (or auto-detect) and user when needed, validate inputs, and report success/failure.
+  - Press Enter after each action to return to the menu; `9` exits.
 
 ## Quick Validation
 Use `docs/QUICKSTART.md` for setup + smoke test + revert verification.

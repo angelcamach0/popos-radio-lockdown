@@ -22,6 +22,32 @@ UNLOCK_REQUEST_FILE="/tmp/prelogin-radio-unlock.request"
 unlock_grace_until=0
 GUARD_LOG_FILE="/run/prelogin-guard.log"
 
+confirm() {
+  local prompt="${1:-Proceed?}"
+  local reply=""
+  read -rp "$prompt [y/N]: " reply || reply=""
+  [[ "$reply" =~ ^[Yy]$ ]]
+}
+
+pause_for_enter() {
+  read -rp "Press Enter to continue..." _ || true
+}
+
+run_action() {
+  # run_action "Label" cmd arg1 arg2...
+  local label="$1"; shift || true
+  echo ""
+  echo ">> $label"
+  "$@"
+  local rc=$?
+  if [[ $rc -eq 0 ]]; then
+    echo "[ok] $label completed."
+  else
+    echo "[error] $label failed (exit $rc). Check messages above."
+  fi
+  return $rc
+}
+
 log_guard() {
   [[ "${PRELOGIN_RADIO_DEBUG:-0}" == "1" ]] || return 0
   printf '%s %s\n' "$(date '+%F %T')" "$*" >> "$GUARD_LOG_FILE" 2>/dev/null || true
@@ -1069,6 +1095,7 @@ Usage:
   ./gdm_network_lockdown.sh policy-status [--profile "<wifi profile>"]
   ./gdm_network_lockdown.sh policy-greeter [--profile "<wifi profile>"]
   ./gdm_network_lockdown.sh policy-user-only [--profile "<wifi profile>"] [--user <username>]
+  ./gdm_network_lockdown.sh tui
 
 Notes:
   lock   : enforce greeter + lock-screen radio lockdown and block gdm toggles.
@@ -1090,6 +1117,123 @@ Env Flags:
 USAGE_EOF
 }
 
+run_tui() {
+  local choice profile user
+
+  while true; do
+    echo ""
+    echo "Pop!_OS Radio Lockdown - Interactive"
+    echo "-------------------------------------"
+    echo "1) Lock (install/enable lockdown)"
+    echo "2) Status"
+    echo "3) Revert (strict)"
+    echo "4) Revert (smart)"
+    echo "5) Revert (smart + greeter autoconnect)"
+    echo "6) Policy status"
+    echo "7) Policy greeter (autoconnect for all users)"
+    echo "8) Policy user-only"
+    echo "9) Exit"
+    echo ""
+    read -rp "Choose an option [1-9]: " choice || choice=""
+
+    case "$choice" in
+      1)
+        if confirm "Run LOCK (writes system files, enables services, installs PAM hooks)?"; then
+          run_action "Lock" lock_rule
+        else
+          echo "Skipped lock."
+        fi
+        pause_for_enter
+        ;;
+      2)
+        run_action "Status" status_rule
+        pause_for_enter
+        ;;
+      3)
+        if confirm "Run REVERT --strict (removes lockdown files/services)?"; then
+          run_action "Revert (strict)" unlock_rule --strict
+        else
+          echo "Skipped revert."
+        fi
+        pause_for_enter
+        ;;
+      4)
+        if confirm "Run REVERT --smart (sets autoconnect=yes on candidate Wi-Fi profiles)?"; then
+          run_action "Revert (smart)" unlock_rule --smart
+        else
+          echo "Skipped revert."
+        fi
+        pause_for_enter
+        ;;
+      5)
+        if confirm "Run REVERT --smart --greeter-autoconnect (autoconnect + permissions=\"\")?"; then
+          run_action "Revert (smart + greeter autoconnect)" unlock_rule --smart --greeter-autoconnect
+        else
+          echo "Skipped revert."
+        fi
+        pause_for_enter
+        ;;
+      6)
+        read -rp "Wi-Fi profile name (leave blank to auto-detect): " profile || profile=""
+        if [[ -n "$profile" ]]; then
+          run_action "Policy status" policy_status_rule --profile "$profile" || echo "Policy status failed (profile not found?)."
+        else
+          run_action "Policy status" policy_status_rule || echo "Policy status failed (no active profile detected?)."
+        fi
+        pause_for_enter
+        ;;
+      7)
+        read -rp "Wi-Fi profile name (leave blank to auto-detect): " profile || profile=""
+        if confirm "Apply greeter-friendly policy (autoconnect=yes, permissions=\"\")?"; then
+          if [[ -n "$profile" ]]; then
+            run_action "Policy greeter" policy_greeter_rule --profile "$profile" || echo "Policy apply failed (check profile name)."
+          else
+            run_action "Policy greeter" policy_greeter_rule || echo "Policy apply failed (no active profile detected)."
+          fi
+        else
+          echo "Skipped policy change."
+        fi
+        pause_for_enter
+        ;;
+      8)
+        read -rp "Wi-Fi profile name (leave blank to auto-detect): " profile || profile=""
+        read -rp "Username for policy (leave blank for current user: $USER): " user || user=""
+        if [[ -n "$user" && "$user" =~ [[:space:]:] ]]; then
+          echo "Username cannot contain spaces or ':'; try again."
+          pause_for_enter
+          continue
+        fi
+        if confirm "Apply user-only policy (autoconnect=yes, permissions=user:<user>)?"; then
+          if [[ -n "$profile" ]]; then
+            if [[ -n "$user" ]]; then
+              run_action "Policy user-only" policy_user_only_rule --profile "$profile" --user "$user" || echo "Policy apply failed (check inputs)."
+            else
+              run_action "Policy user-only" policy_user_only_rule --profile "$profile" || echo "Policy apply failed (check profile name)."
+            fi
+          else
+            if [[ -n "$user" ]]; then
+              run_action "Policy user-only" policy_user_only_rule --user "$user" || echo "Policy apply failed (check inputs)."
+            else
+              run_action "Policy user-only" policy_user_only_rule || echo "Policy apply failed (no active profile detected)."
+            fi
+          fi
+        else
+          echo "Skipped policy change."
+        fi
+        pause_for_enter
+        ;;
+      9)
+        echo "Goodbye."
+        return 0
+        ;;
+      *)
+        echo "Invalid selection. Choose 1-9."
+        pause_for_enter
+        ;;
+    esac
+  done
+}
+
 cmd="${1:-}"
 shift || true
 case "$cmd" in
@@ -1099,5 +1243,6 @@ case "$cmd" in
   policy-status) policy_status_rule "$@" ;;
   policy-greeter) policy_greeter_rule "$@" ;;
   policy-user-only) policy_user_only_rule "$@" ;;
+  tui) run_tui ;;
   *) usage; exit 1 ;;
 esac
